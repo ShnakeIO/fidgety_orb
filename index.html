@@ -63,6 +63,32 @@
             color: #45a29e;
         }
 
+        .permission-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.8);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .permission-button {
+            background-color: #66fcf1;
+            color: #0b0c10;
+            border: none;
+            padding: 15px 30px;
+            font-size: 1.2em;
+            font-weight: bold;
+            border-radius: 8px;
+            cursor: pointer;
+            box-shadow: 0 0 10px #66fcf1;
+        }
+
         /* Tilt Animations */
         .tilt-up { transform: rotateX(10deg); }
         .tilt-down { transform: rotateX(-10deg); }
@@ -82,6 +108,11 @@
         <canvas id="gameCanvas"></canvas>
         <div class="level-info">Level: <span id="level">1</span></div>
         <div class="help-text">Use Arrow Keys or Tilt Device to Move.</div>
+
+        <div class="permission-overlay" id="permissionOverlay">
+            <p>Please tap the button to enable motion controls.</p>
+            <button class="permission-button" id="permissionButton">Enable Tilt</button>
+        </div>
     </div>
     <div id="message"></div>
 
@@ -96,6 +127,8 @@
             const messageEl = document.getElementById('message');
             const levelEl = document.getElementById('level');
             const gameContainer = document.getElementById('gameContainer');
+            const permissionOverlay = document.getElementById('permissionOverlay');
+            const permissionButton = document.getElementById('permissionButton');
 
             const moveSound = document.getElementById('moveSound');
             const winSound = document.getElementById('winSound');
@@ -151,17 +184,17 @@
             function draw() {
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-                ctx.fillStyle = '#45a29e'; // Teal for goal
+                ctx.fillStyle = '#45a29e';
                 ctx.beginPath();
                 ctx.arc(goal.x, goal.y, goal.radius, 0, Math.PI * 2);
                 ctx.fill();
 
-                ctx.fillStyle = '#66fcf1'; // Light blue for orb
+                ctx.fillStyle = '#66fcf1';
                 ctx.beginPath();
                 ctx.arc(orb.x, orb.y, orb.radius, 0, Math.PI * 2);
                 ctx.fill();
 
-                ctx.fillStyle = '#1f2833'; // Walls
+                ctx.fillStyle = '#1f2833';
                 walls.forEach(wall => {
                     if (wall.isCircle) {
                          ctx.beginPath();
@@ -284,23 +317,54 @@
                 currentTilt = { x: 0, y: 0 };
                 gameContainer.classList.remove('tilt-up', 'tilt-down', 'tilt-left', 'tilt-right');
             });
-
-            // Motion controls
-            if (window.DeviceMotionEvent) {
-                window.addEventListener('devicemotion', (event) => {
-                    const acceleration = event.accelerationIncludingGravity;
-                    if (acceleration) {
-                        const tiltX = acceleration.x;
-                        const tiltY = -acceleration.y;
-                        currentTilt.x = tiltX / 2;
-                        currentTilt.y = tiltY / 2;
+            
+            // Motion controls logic
+            function enableMotionControls() {
+                if (window.DeviceOrientationEvent) {
+                    window.addEventListener('deviceorientation', (event) => {
+                        const tiltX = event.gamma;
+                        const tiltY = event.beta;
+                        currentTilt.x = tiltX / 10;
+                        currentTilt.y = tiltY / 10;
 
                         gameContainer.style.transform = `rotateX(${-currentTilt.y * 5}deg) rotateY(${currentTilt.x * 5}deg)`;
-                    }
+                    });
+                } else if (window.DeviceMotionEvent) {
+                     window.addEventListener('devicemotion', (event) => {
+                        const acceleration = event.accelerationIncludingGravity;
+                        if (acceleration) {
+                            const tiltX = acceleration.x;
+                            const tiltY = -acceleration.y;
+                            currentTilt.x = tiltX / 2;
+                            currentTilt.y = tiltY / 2;
+    
+                            gameContainer.style.transform = `rotateX(${-currentTilt.y * 5}deg) rotateY(${currentTilt.x * 5}deg)`;
+                        }
+                    });
+                } else {
+                    document.querySelector('.help-text').textContent = 'Device does not support motion controls. Use Arrow Keys.';
+                }
+                permissionOverlay.style.display = 'none';
+            }
+
+            if (typeof DeviceMotionEvent.requestPermission === 'function') {
+                // iOS 13+ support
+                permissionButton.addEventListener('click', () => {
+                    DeviceMotionEvent.requestPermission()
+                        .then(permissionState => {
+                            if (permissionState === 'granted') {
+                                enableMotionControls();
+                            } else {
+                                permissionOverlay.style.display = 'none';
+                                document.querySelector('.help-text').textContent = 'Motion controls denied. Use Arrow Keys.';
+                            }
+                        })
+                        .catch(console.error);
                 });
             } else {
-                // Fallback for devices without DeviceMotionEvent
-                document.querySelector('.help-text').textContent = 'Use Arrow Keys to Move.';
+                // Non-iOS devices, or older iOS
+                permissionOverlay.style.display = 'none';
+                enableMotionControls();
             }
 
             // Initial game setup
