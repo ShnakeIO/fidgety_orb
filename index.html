@@ -106,7 +106,7 @@
     <div class="game-container" id="gameContainer">
         <canvas id="gameCanvas"></canvas>
         <div class="level-info">Level: <span id="level">1</span></div>
-        <div class="help-text">Use Arrow Keys, or Swipe to Move.</div>
+        <div class="help-text">Use Arrow Keys or Swipe to Move.</div>
 
         <div class="permission-overlay" id="permissionOverlay">
             <p>Please tap the button to enable motion controls.</p>
@@ -118,6 +118,7 @@
     <audio id="moveSound" src="https://assets.mixkit.co/sfx/preview/mixkit-sci-fi-click-900.mp3"></audio>
     <audio id="winSound" src="https://assets.mixkit.co/sfx/preview/mixkit-unlock-game-notification-253.mp3"></audio>
     <audio id="loseSound" src="https://assets.mixkit.co/sfx/preview/mixkit-negative-game-buzz-306.mp3"></audio>
+    <audio id="teleportSound" src="https://assets.mixkit.co/sfx/preview/mixkit-fantasy-spell-843.mp3"></audio>
 
     <script>
         document.addEventListener('DOMContentLoaded', () => {
@@ -132,8 +133,8 @@
             const moveSound = document.getElementById('moveSound');
             const winSound = document.getElementById('winSound');
             const loseSound = document.getElementById('loseSound');
+            const teleportSound = document.getElementById('teleportSound');
 
-            // Prevent unwanted gestures on mobile
             document.addEventListener('gesturestart', (e) => e.preventDefault());
             document.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
             
@@ -141,6 +142,7 @@
             let orb = { x: 0, y: 0, radius: 15, vx: 0, vy: 0 };
             let goal = { x: 0, y: 0, radius: 25 };
             let walls = [];
+            let warpGates = [];
             let gameLoop;
             let currentTilt = { x: 0, y: 0 };
             
@@ -148,11 +150,11 @@
             const FRICTION = 0.98;
 
             const levels = [
-                { start: { x: 50, y: 50 }, goal: { x: 450, y: 450 }, walls: [] },
-                { start: { x: 50, y: 250 }, goal: { x: 450, y: 250 }, walls: [{ x: 200, y: 150, width: 20, height: 200 }] },
-                { start: { x: 450, y: 50 }, goal: { x: 50, y: 450 }, walls: [{ x: 100, y: 100, width: 150, height: 20 }, { x: 300, y: 300, width: 150, height: 20 }] },
-                { start: { x: 250, y: 250 }, goal: { x: 250, y: 50 }, walls: [{ x: 100, y: 100, width: 300, height: 300, isCircle: true, radius: 150 }] },
-                { start: { x: 50, y: 450 }, goal: { x: 450, y: 50 }, walls: [{ x: 100, y: 100, width: 20, height: 300 }, { x: 380, y: 100, width: 20, height: 300 }] },
+                { start: { x: 50, y: 50 }, goal: { x: 450, y: 450 }, walls: [], warpGates: [] },
+                { start: { x: 50, y: 250 }, goal: { x: 450, y: 250 }, walls: [{ x: 200, y: 150, width: 20, height: 200 }], warpGates: [] },
+                { start: { x: 450, y: 50 }, goal: { x: 50, y: 450 }, walls: [{ x: 100, y: 100, width: 150, height: 20 }, { x: 300, y: 300, width: 150, height: 20 }], warpGates: [] },
+                { start: { x: 250, y: 250 }, goal: { x: 250, y: 50 }, walls: [{ x: 100, y: 100, width: 300, height: 300, isCircle: true, radius: 150 }], warpGates: [] },
+                { start: { x: 50, y: 450 }, goal: { x: 450, y: 50 }, walls: [{ x: 100, y: 100, width: 20, height: 300 }, { x: 380, y: 100, width: 20, height: 300 }], warpGates: [{x: 250, y: 250, radius: 20}] },
             ];
 
             function playSound(audioElement) {
@@ -177,6 +179,7 @@
                 goal.x = currentLevel.goal.x;
                 goal.y = currentLevel.goal.y;
                 walls = currentLevel.walls;
+                warpGates = currentLevel.warpGates;
                 showMessage(`Level ${level}: Go!`);
             }
 
@@ -193,7 +196,7 @@
                 ctx.arc(orb.x, orb.y, orb.radius, 0, Math.PI * 2);
                 ctx.fill();
 
-                ctx.fillStyle = '#1f2833';
+                ctx.fillStyle = '#c5c6c7'; // Light gray for walls
                 walls.forEach(wall => {
                     if (wall.isCircle) {
                          ctx.beginPath();
@@ -202,6 +205,13 @@
                     } else {
                         ctx.fillRect(wall.x, wall.y, wall.width, wall.height);
                     }
+                });
+                
+                ctx.fillStyle = '#45a29e'; // Teal for warp gates
+                warpGates.forEach(gate => {
+                    ctx.beginPath();
+                    ctx.arc(gate.x, gate.y, gate.radius, 0, Math.PI * 2);
+                    ctx.fill();
                 });
             }
 
@@ -259,6 +269,22 @@
                         }
                     }
                 });
+
+                warpGates.forEach(gate => {
+                    const dist = Math.sqrt(Math.pow(orb.x - gate.x, 2) + Math.pow(orb.y - gate.y, 2));
+                    if (dist < orb.radius + gate.radius) {
+                        teleportOrb();
+                    }
+                });
+            }
+
+            function teleportOrb() {
+                playSound(teleportSound);
+                showMessage("WHOOSH! Teleporting...");
+                orb.x = Math.random() * canvas.width;
+                orb.y = Math.random() * canvas.height;
+                orb.vx = 0;
+                orb.vy = 0;
             }
 
             function winGame() {
@@ -348,7 +374,6 @@
                 touchStartY = null;
                 playSound(moveSound);
 
-                // Reset tilt after a short delay for a "push" effect
                 setTimeout(() => {
                     currentTilt = { x: 0, y: 0 };
                 }, 100);
