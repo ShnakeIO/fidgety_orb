@@ -95,10 +95,10 @@
         .tilt-left { transform: rotateY(10deg); }
         .tilt-right { transform: rotateY(-10deg); }
         
-        @keyframes glowing-orb {
-            0% { box-shadow: 0 0 5px #ff5733, 0 0 10px #ff5733, 0 0 15px #ff5733; }
-            50% { box-shadow: 0 0 20px #ff5733, 0 0 30px #ff5733, 0 0 40px #ff5733; }
-            100% { box-shadow: 0 0 5px #ff5733, 0 0 10px #ff5733, 0 0 15px #ff5733; }
+        @keyframes glowing-goal {
+            0% { box-shadow: 0 0 5px #45a29e, 0 0 10px #45a29e; }
+            50% { box-shadow: 0 0 20px #45a29e, 0 0 30px #45a29e; }
+            100% { box-shadow: 0 0 5px #45a29e, 0 0 10px #45a29e; }
         }
     </style>
 </head>
@@ -138,7 +138,7 @@
             document.addEventListener('gesturestart', (e) => e.preventDefault());
             document.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
             
-            let level = 1;
+            let level = 0;
             let orb = { x: 0, y: 0, radius: 15, vx: 0, vy: 0 };
             let goal = { x: 0, y: 0, radius: 25 };
             let walls = [];
@@ -149,38 +149,69 @@
             const TILT_STRENGTH = 0.5;
             const FRICTION = 0.98;
 
-            const levels = [
-                { start: { x: 50, y: 50 }, goal: { x: 450, y: 450 }, walls: [], warpGates: [] },
-                { start: { x: 50, y: 250 }, goal: { x: 450, y: 250 }, walls: [{ x: 200, y: 150, width: 20, height: 200 }], warpGates: [] },
-                { start: { x: 450, y: 50 }, goal: { x: 50, y: 450 }, walls: [{ x: 100, y: 100, width: 150, height: 20 }, { x: 300, y: 300, width: 150, height: 20 }], warpGates: [] },
-                { start: { x: 250, y: 250 }, goal: { x: 250, y: 50 }, walls: [{ x: 100, y: 100, width: 300, height: 300, isCircle: true, radius: 150 }], warpGates: [] },
-                { start: { x: 50, y: 450 }, goal: { x: 450, y: 50 }, walls: [{ x: 100, y: 100, width: 20, height: 300 }, { x: 380, y: 100, width: 20, height: 300 }], warpGates: [{x: 250, y: 250, radius: 20}] },
-            ];
-
             function playSound(audioElement) {
                 audioElement.currentTime = 0;
                 audioElement.play().catch(e => console.log("Audio play failed:", e));
             }
 
-            function loadLevel(levelNum) {
-                const currentLevel = levels[levelNum - 1];
-                if (!currentLevel) {
-                    showMessage("You won! You have mastered the Fidgety Orb!");
-                    clearInterval(gameLoop);
-                    return;
-                }
+            function generateLevel(levelNum) {
+                const numWalls = Math.floor(Math.random() * (2 + Math.floor(levelNum / 5))) + 1;
+                const numWarpGates = Math.floor(Math.random() * (2 + Math.floor(levelNum / 10)));
                 
-                level = levelNum;
-                levelEl.textContent = level;
-                orb.x = currentLevel.start.x;
-                orb.y = currentLevel.start.y;
+                walls = [];
+                warpGates = [];
+                
+                // Generate a random orb and goal position, ensuring they are not too close
+                let orbPos, goalPos;
+                do {
+                    orbPos = { x: Math.random() * (canvas.width - 100) + 50, y: Math.random() * (canvas.height - 100) + 50 };
+                    goalPos = { x: Math.random() * (canvas.width - 100) + 50, y: Math.random() * (canvas.height - 100) + 50 };
+                } while (Math.sqrt(Math.pow(orbPos.x - goalPos.x, 2) + Math.pow(orbPos.y - goalPos.y, 2)) < 200);
+
+                orb.x = orbPos.x;
+                orb.y = orbPos.y;
                 orb.vx = 0;
                 orb.vy = 0;
-                goal.x = currentLevel.goal.x;
-                goal.y = currentLevel.goal.y;
-                walls = currentLevel.walls;
-                warpGates = currentLevel.warpGates;
-                showMessage(`Level ${level}: Go!`);
+                goal.x = goalPos.x;
+                goal.y = goalPos.y;
+
+                // Generate random walls
+                for (let i = 0; i < numWalls; i++) {
+                    const isCircular = Math.random() > 0.5;
+                    if (isCircular) {
+                        walls.push({
+                            x: Math.random() * (canvas.width - 100) + 50,
+                            y: Math.random() * (canvas.height - 100) + 50,
+                            isCircle: true,
+                            radius: Math.random() * 50 + 20
+                        });
+                    } else {
+                        walls.push({
+                            x: Math.random() * (canvas.width - 150) + 50,
+                            y: Math.random() * (canvas.height - 150) + 50,
+                            width: Math.random() * 100 + 30,
+                            height: Math.random() * 100 + 30
+                        });
+                    }
+                }
+                
+                // Generate random warp gates
+                for (let i = 0; i < numWarpGates; i++) {
+                    warpGates.push({
+                        x: Math.random() * (canvas.width - 100) + 50,
+                        y: Math.random() * (canvas.height - 100) + 50,
+                        radius: 20
+                    });
+                }
+                
+                showMessage(`Level ${levelNum}: Go!`);
+            }
+            
+            function startGame() {
+                level = 1;
+                levelEl.textContent = level;
+                generateLevel(level);
+                gameLoop = setInterval(update, 1000 / 60);
             }
 
             function draw() {
@@ -196,7 +227,7 @@
                 ctx.arc(orb.x, orb.y, orb.radius, 0, Math.PI * 2);
                 ctx.fill();
 
-                ctx.fillStyle = '#c5c6c7'; // Light gray for walls
+                ctx.fillStyle = '#c5c6c7';
                 walls.forEach(wall => {
                     if (wall.isCircle) {
                          ctx.beginPath();
@@ -207,7 +238,7 @@
                     }
                 });
                 
-                ctx.fillStyle = '#45a29e'; // Teal for warp gates
+                ctx.fillStyle = '#45a29e';
                 warpGates.forEach(gate => {
                     ctx.beginPath();
                     ctx.arc(gate.x, gate.y, gate.radius, 0, Math.PI * 2);
@@ -292,7 +323,9 @@
                 playSound(winSound);
                 clearInterval(gameLoop);
                 setTimeout(() => {
-                    loadLevel(level + 1);
+                    level++;
+                    levelEl.textContent = level;
+                    generateLevel(level);
                     gameLoop = setInterval(update, 1000 / 60);
                 }, 2000);
             }
@@ -302,7 +335,7 @@
                 playSound(loseSound);
                 clearInterval(gameLoop);
                 setTimeout(() => {
-                    loadLevel(level);
+                    generateLevel(level);
                     gameLoop = setInterval(update, 1000 / 60);
                 }, 2000);
             }
@@ -382,8 +415,7 @@
             // Initial game setup
             canvas.width = 500;
             canvas.height = 500;
-            loadLevel(1);
-            gameLoop = setInterval(update, 1000 / 60);
+            startGame();
         });
     </script>
 </body>
