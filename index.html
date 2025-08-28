@@ -63,30 +63,20 @@
             color: #45a29e;
         }
 
-        .permission-overlay {
+        .tap-to-start {
             position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0, 0, 0, 0.8);
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            z-index: 1000;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 1.5em;
+            color: #66fcf1;
+            animation: pulse 1.5s infinite;
         }
 
-        .permission-button {
-            background-color: #66fcf1;
-            color: #0b0c10;
-            border: none;
-            padding: 15px 30px;
-            font-size: 1.2em;
-            font-weight: bold;
-            border-radius: 8px;
-            cursor: pointer;
-            box-shadow: 0 0 10px #66fcf1;
+        @keyframes pulse {
+            0% { opacity: 0.8; }
+            50% { opacity: 1; }
+            100% { opacity: 0.8; }
         }
 
         /* Tilt Animations */
@@ -94,13 +84,6 @@
         .tilt-down { transform: rotateX(-10deg); }
         .tilt-left { transform: rotateY(10deg); }
         .tilt-right { transform: rotateY(-10deg); }
-        
-        @keyframes glowing-orb {
-            0% { box-shadow: 0 0 5px #ff5733, 0 0 10px #ff5733, 0 0 15px #ff5733; }
-            50% { box-shadow: 0 0 20px #ff5733, 0 0 30px #ff5733, 0 0 40px #ff5733; }
-            100% { box-shadow: 0 0 5px #ff5733, 0 0 10px #ff5733, 0 0 15px #ff5733; }
-        }
-
     </style>
 </head>
 <body>
@@ -108,11 +91,7 @@
         <canvas id="gameCanvas"></canvas>
         <div class="level-info">Level: <span id="level">1</span></div>
         <div class="help-text">Use Arrow Keys or Tilt Device to Move.</div>
-
-        <div class="permission-overlay" id="permissionOverlay">
-            <p>Please tap the button to enable motion controls.</p>
-            <button class="permission-button" id="permissionButton">Enable Tilt</button>
-        </div>
+        <div id="startMessage" class="tap-to-start">Tap to Start</div>
     </div>
     <div id="message"></div>
 
@@ -127,17 +106,13 @@
             const messageEl = document.getElementById('message');
             const levelEl = document.getElementById('level');
             const gameContainer = document.getElementById('gameContainer');
-            const permissionOverlay = document.getElementById('permissionOverlay');
-            const permissionButton = document.getElementById('permissionButton');
+            const startMessage = document.getElementById('startMessage');
 
             const moveSound = document.getElementById('moveSound');
             const winSound = document.getElementById('winSound');
             const loseSound = document.getElementById('loseSound');
-
-            // Prevent unwanted gestures on mobile
-            document.addEventListener('gesturestart', (e) => e.preventDefault());
-            document.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
             
+            let gameActive = false;
             let level = 1;
             let orb = { x: 0, y: 0, radius: 15, vx: 0, vy: 0 };
             let goal = { x: 0, y: 0, radius: 25 };
@@ -157,6 +132,7 @@
             ];
 
             function playSound(audioElement) {
+                if (!gameActive) return;
                 audioElement.currentTime = 0;
                 audioElement.play().catch(e => console.log("Audio play failed:", e));
             }
@@ -207,6 +183,7 @@
             }
 
             function update() {
+                if (!gameActive) return;
                 orb.vx += currentTilt.x * TILT_STRENGTH;
                 orb.vy += currentTilt.y * TILT_STRENGTH;
 
@@ -291,6 +268,7 @@
 
             // Keyboard controls
             document.addEventListener('keydown', (e) => {
+                if (!gameActive) return;
                 gameContainer.classList.remove('tilt-up', 'tilt-down', 'tilt-left', 'tilt-right');
                 switch (e.key) {
                     case 'ArrowUp':
@@ -314,11 +292,35 @@
             });
 
             document.addEventListener('keyup', (e) => {
+                if (!gameActive) return;
                 currentTilt = { x: 0, y: 0 };
                 gameContainer.classList.remove('tilt-up', 'tilt-down', 'tilt-left', 'tilt-right');
             });
-            
-            // Motion controls logic
+
+            // Tap-to-start and motion controls
+            document.addEventListener('touchstart', (e) => {
+                if (gameActive) return;
+                
+                // On first tap, request permission for motion sensors on iOS
+                if (typeof DeviceMotionEvent.requestPermission === 'function') {
+                    DeviceMotionEvent.requestPermission()
+                        .then(permissionState => {
+                            if (permissionState === 'granted') {
+                                enableMotionControls();
+                                startGame();
+                            } else {
+                                alert("Motion controls denied. You can still use keyboard controls.");
+                                startGame();
+                            }
+                        })
+                        .catch(console.error);
+                } else {
+                    // For non-iOS devices, just start the game
+                    enableMotionControls();
+                    startGame();
+                }
+            }, { once: true });
+
             function enableMotionControls() {
                 if (window.DeviceOrientationEvent) {
                     window.addEventListener('deviceorientation', (event) => {
@@ -326,7 +328,6 @@
                         const tiltY = event.beta;
                         currentTilt.x = tiltX / 10;
                         currentTilt.y = tiltY / 10;
-
                         gameContainer.style.transform = `rotateX(${-currentTilt.y * 5}deg) rotateY(${currentTilt.x * 5}deg)`;
                     });
                 } else if (window.DeviceMotionEvent) {
@@ -337,41 +338,25 @@
                             const tiltY = -acceleration.y;
                             currentTilt.x = tiltX / 2;
                             currentTilt.y = tiltY / 2;
-    
                             gameContainer.style.transform = `rotateX(${-currentTilt.y * 5}deg) rotateY(${currentTilt.x * 5}deg)`;
                         }
                     });
                 } else {
                     document.querySelector('.help-text').textContent = 'Device does not support motion controls. Use Arrow Keys.';
                 }
-                permissionOverlay.style.display = 'none';
             }
 
-            if (typeof DeviceMotionEvent.requestPermission === 'function') {
-                // iOS 13+ support
-                permissionButton.addEventListener('click', () => {
-                    DeviceMotionEvent.requestPermission()
-                        .then(permissionState => {
-                            if (permissionState === 'granted') {
-                                enableMotionControls();
-                            } else {
-                                permissionOverlay.style.display = 'none';
-                                document.querySelector('.help-text').textContent = 'Motion controls denied. Use Arrow Keys.';
-                            }
-                        })
-                        .catch(console.error);
-                });
-            } else {
-                // Non-iOS devices, or older iOS
-                permissionOverlay.style.display = 'none';
-                enableMotionControls();
+            function startGame() {
+                gameActive = true;
+                startMessage.style.display = 'none';
+                loadLevel(1);
+                gameLoop = setInterval(update, 1000 / 60);
             }
-
-            // Initial game setup
+            
+            // Initial setup
             canvas.width = 500;
             canvas.height = 500;
-            loadLevel(1);
-            gameLoop = setInterval(update, 1000 / 60);
+            draw(); // Draw the initial screen before the game starts
         });
     </script>
 </body>
