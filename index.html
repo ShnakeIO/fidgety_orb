@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, shrink-to-fit=no">
+    <title>The Fidgety Orb</title>
+    <style>
+        body {
+            background-color: #0b0c10;
+            color: #c5c6c7;
+            font-family: 'Poppins', sans-serif;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            text-align: center;
+            overflow: hidden;
+        }
+
+        .game-container {
+            width: 90vmin;
+            height: 90vmin;
+            max-width: 600px;
+            max-height: 600px;
+            border: 5px solid #66fcf1;
+            box-shadow: 0 0 30px rgba(102, 252, 241, 0.5);
+            position: relative;
+            background-color: #1f2833;
+            overflow: hidden;
+            transition: transform 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+            transform-style: preserve-3d;
+            border-radius: 10px;
+        }
+        
+        #gameCanvas {
+            width: 100%;
+            height: 100%;
+        }
+
+        #message {
+            margin-top: 20px;
+            font-size: 1.5em;
+            color: #45a29e;
+            text-shadow: 1px 1px #0b0c10;
+        }
+
+        .level-info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            font-size: 1.2em;
+            color: #45a29e;
+            font-weight: bold;
+        }
+
+        .help-text {
+            position: absolute;
+            bottom: 10px;
+            width: 90%;
+            font-size: 0.8em;
+            color: #45a29e;
+        }
+
+        /* Tilt Animations */
+        .tilt-up { transform: rotateX(10deg); }
+        .tilt-down { transform: rotateX(-10deg); }
+        .tilt-left { transform: rotateY(10deg); }
+        .tilt-right { transform: rotateY(-10deg); }
+        
+        @keyframes glowing-orb {
+            0% { box-shadow: 0 0 5px #ff5733, 0 0 10px #ff5733, 0 0 15px #ff5733; }
+            50% { box-shadow: 0 0 20px #ff5733, 0 0 30px #ff5733, 0 0 40px #ff5733; }
+            100% { box-shadow: 0 0 5px #ff5733, 0 0 10px #ff5733, 0 0 15px #ff5733; }
+        }
+
+    </style>
+</head>
+<body>
+    <div class="game-container" id="gameContainer">
+        <canvas id="gameCanvas"></canvas>
+        <div class="level-info">Level: <span id="level">1</span></div>
+        <div class="help-text">Use Arrow Keys or Tilt Device to Move.</div>
+    </div>
+    <div id="message"></div>
+
+    <audio id="moveSound" src="https://assets.mixkit.co/sfx/preview/mixkit-sci-fi-click-900.mp3"></audio>
+    <audio id="winSound" src="https://assets.mixkit.co/sfx/preview/mixkit-unlock-game-notification-253.mp3"></audio>
+    <audio id="loseSound" src="https://assets.mixkit.co/sfx/preview/mixkit-negative-game-buzz-306.mp3"></audio>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const canvas = document.getElementById('gameCanvas');
+            const ctx = canvas.getContext('2d');
+            const messageEl = document.getElementById('message');
+            const levelEl = document.getElementById('level');
+            const gameContainer = document.getElementById('gameContainer');
+
+            const moveSound = document.getElementById('moveSound');
+            const winSound = document.getElementById('winSound');
+            const loseSound = document.getElementById('loseSound');
+
+            // Prevent unwanted gestures on mobile
+            document.addEventListener('gesturestart', (e) => e.preventDefault());
+            document.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+            
+            let level = 1;
+            let orb = { x: 0, y: 0, radius: 15, vx: 0, vy: 0 };
+            let goal = { x: 0, y: 0, radius: 25 };
+            let walls = [];
+            let gameLoop;
+            let currentTilt = { x: 0, y: 0 };
+            
+            const TILT_STRENGTH = 0.5;
+            const FRICTION = 0.98;
+
+            const levels = [
+                { start: { x: 50, y: 50 }, goal: { x: 450, y: 450 }, walls: [] },
+                { start: { x: 50, y: 250 }, goal: { x: 450, y: 250 }, walls: [{ x: 200, y: 150, width: 20, height: 200 }] },
+                { start: { x: 450, y: 50 }, goal: { x: 50, y: 450 }, walls: [{ x: 100, y: 100, width: 150, height: 20 }, { x: 300, y: 300, width: 150, height: 20 }] },
+                { start: { x: 250, y: 250 }, goal: { x: 250, y: 50 }, walls: [{ x: 100, y: 100, width: 300, height: 300, isCircle: true, radius: 150 }] },
+                { start: { x: 50, y: 450 }, goal: { x: 450, y: 50 }, walls: [{ x: 100, y: 100, width: 20, height: 300 }, { x: 380, y: 100, width: 20, height: 300 }] },
+            ];
+
+            function playSound(audioElement) {
+                audioElement.currentTime = 0;
+                audioElement.play().catch(e => console.log("Audio play failed:", e));
+            }
+
+            function loadLevel(levelNum) {
+                const currentLevel = levels[levelNum - 1];
+                if (!currentLevel) {
+                    showMessage("You won! You have mastered the Fidgety Orb!");
+                    clearInterval(gameLoop);
+                    return;
+                }
+                
+                level = levelNum;
+                levelEl.textContent = level;
+                orb.x = currentLevel.start.x;
+                orb.y = currentLevel.start.y;
+                orb.vx = 0;
+                orb.vy = 0;
+                goal.x = currentLevel.goal.x;
+                goal.y = currentLevel.goal.y;
+                walls = currentLevel.walls;
+                showMessage(`Level ${level}: Go!`);
+            }
+
+            function draw() {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                ctx.fillStyle = '#45a29e'; // Teal for goal
+                ctx.beginPath();
+                ctx.arc(goal.x, goal.y, goal.radius, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.fillStyle = '#66fcf1'; // Light blue for orb
+                ctx.beginPath();
+                ctx.arc(orb.x, orb.y, orb.radius, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.fillStyle = '#1f2833'; // Walls
+                walls.forEach(wall => {
+                    if (wall.isCircle) {
+                         ctx.beginPath();
+                         ctx.arc(wall.x, wall.y, wall.radius, 0, Math.PI * 2);
+                         ctx.fill();
+                    } else {
+                        ctx.fillRect(wall.x, wall.y, wall.width, wall.height);
+                    }
+                });
+            }
+
+            function update() {
+                orb.vx += currentTilt.x * TILT_STRENGTH;
+                orb.vy += currentTilt.y * TILT_STRENGTH;
+
+                orb.vx *= FRICTION;
+                orb.vy *= FRICTION;
+
+                orb.x += orb.vx;
+                orb.y += orb.vy;
+
+                checkCollisions();
+
+                if (Math.sqrt(Math.pow(orb.x - goal.x, 2) + Math.pow(orb.y - goal.y, 2)) < orb.radius + goal.radius) {
+                    winGame();
+                } else if (orb.x < 0 || orb.x > canvas.width || orb.y < 0 || orb.y > canvas.height) {
+                    loseGame();
+                }
+
+                draw();
+            }
+
+            function checkCollisions() {
+                if (orb.x - orb.radius < 0) { orb.vx *= -1; orb.x = orb.radius; }
+                if (orb.x + orb.radius > canvas.width) { orb.vx *= -1; orb.x = canvas.width - orb.radius; }
+                if (orb.y - orb.radius < 0) { orb.vy *= -1; orb.y = orb.radius; }
+                if (orb.y + orb.radius > canvas.height) { orb.vy *= -1; orb.y = canvas.height - orb.radius; }
+
+                walls.forEach(wall => {
+                    if (wall.isCircle) {
+                        const dist = Math.sqrt(Math.pow(orb.x - wall.x, 2) + Math.pow(orb.y - wall.y, 2));
+                        if (dist < orb.radius + wall.radius) {
+                            const angle = Math.atan2(orb.y - wall.y, orb.x - wall.x);
+                            orb.vx = Math.cos(angle) * Math.abs(orb.vx);
+                            orb.vy = Math.sin(angle) * Math.abs(orb.vy);
+                            const overlap = orb.radius + wall.radius - dist;
+                            orb.x += Math.cos(angle) * overlap;
+                            orb.y += Math.sin(angle) * overlap;
+                        }
+                    } else {
+                        const closestX = Math.max(wall.x, Math.min(orb.x, wall.x + wall.width));
+                        const closestY = Math.max(wall.y, Math.min(orb.y, wall.y + wall.height));
+                        const distanceX = orb.x - closestX;
+                        const distanceY = orb.y - closestY;
+                        const distanceSquared = (distanceX * distanceX) + (distanceY * distanceY);
+                        if (distanceSquared < (orb.radius * orb.radius)) {
+                            const angle = Math.atan2(distanceY, distanceX);
+                            const overlap = orb.radius - Math.sqrt(distanceSquared);
+                            orb.x += Math.cos(angle) * overlap;
+                            orb.y += Math.sin(angle) * overlap;
+                            orb.vx *= -1;
+                            orb.vy *= -1;
+                        }
+                    }
+                });
+            }
+
+            function winGame() {
+                showMessage("You did it! Loading next level...");
+                playSound(winSound);
+                clearInterval(gameLoop);
+                setTimeout(() => {
+                    loadLevel(level + 1);
+                    gameLoop = setInterval(update, 1000 / 60);
+                }, 2000);
+            }
+
+            function loseGame() {
+                showMessage("You fell into the void. Try again.");
+                playSound(loseSound);
+                clearInterval(gameLoop);
+                setTimeout(() => {
+                    loadLevel(level);
+                    gameLoop = setInterval(update, 1000 / 60);
+                }, 2000);
+            }
+
+            function showMessage(msg) {
+                messageEl.textContent = msg;
+                setTimeout(() => {
+                    messageEl.textContent = '';
+                }, 3000);
+            }
+
+            // Keyboard controls
+            document.addEventListener('keydown', (e) => {
+                gameContainer.classList.remove('tilt-up', 'tilt-down', 'tilt-left', 'tilt-right');
+                switch (e.key) {
+                    case 'ArrowUp':
+                        currentTilt = { x: 0, y: -1 };
+                        gameContainer.classList.add('tilt-up');
+                        break;
+                    case 'ArrowDown':
+                        currentTilt = { x: 0, y: 1 };
+                        gameContainer.classList.add('tilt-down');
+                        break;
+                    case 'ArrowLeft':
+                        currentTilt = { x: -1, y: 0 };
+                        gameContainer.classList.add('tilt-left');
+                        break;
+                    case 'ArrowRight':
+                        currentTilt = { x: 1, y: 0 };
+                        gameContainer.classList.add('tilt-right');
+                        break;
+                }
+                playSound(moveSound);
+            });
+
+            document.addEventListener('keyup', (e) => {
+                currentTilt = { x: 0, y: 0 };
+                gameContainer.classList.remove('tilt-up', 'tilt-down', 'tilt-left', 'tilt-right');
+            });
+
+            // Motion controls
+            if (window.DeviceMotionEvent) {
+                window.addEventListener('devicemotion', (event) => {
+                    const acceleration = event.accelerationIncludingGravity;
+                    if (acceleration) {
+                        const tiltX = acceleration.x;
+                        const tiltY = -acceleration.y;
+                        currentTilt.x = tiltX / 2;
+                        currentTilt.y = tiltY / 2;
+
+                        gameContainer.style.transform = `rotateX(${-currentTilt.y * 5}deg) rotateY(${currentTilt.x * 5}deg)`;
+                    }
+                });
+            } else {
+                // Fallback for devices without DeviceMotionEvent
+                document.querySelector('.help-text').textContent = 'Use Arrow Keys to Move.';
+            }
+
+            // Initial game setup
+            canvas.width = 500;
+            canvas.height = 500;
+            loadLevel(1);
+            gameLoop = setInterval(update, 1000 / 60);
+        });
+    </script>
+</body>
+</html>
